@@ -150,11 +150,37 @@ static int ext_power_generic_init(const struct device *dev) {
     }
 
 #if IS_ENABLED(CONFIG_SETTINGS)
-    k_work_init_delayable(&ext_power_save_work, ext_power_save_state_work);
-#endif
+    settings_subsys_init();
 
-    // Enable by default. We may get disabled again once settings load.
-    ext_power_enable(dev);
+    int err = settings_register(&ext_power_conf);
+    if (err) {
+        LOG_ERR("Failed to register the ext_power settings handler (err %d)", err);
+        return err;
+    }
+
+    k_work_init_delayable(&ext_power_save_work, ext_power_save_state_work);
+
+    // Set default value if settings isn't set
+    settings_load_subtree("ext_power");
+    if (!data->settings_init) {
+
+        data->status = IS_ENABLED(CONFIG_ZMK_EXT_POWER_START);
+        k_work_schedule(&ext_power_save_work, K_NO_WAIT);
+
+        if (data->status) {
+            ext_power_enable(dev);
+        } else {
+            ext_power_disable(dev);
+        }
+    }
+#else
+    // If no settings, set ext_power on/off
+    if (IS_ENABLED(CONFIG_ZMK_EXT_POWER_START)) {
+        ext_power_enable(dev);
+    } else {
+        ext_power_disable(dev);
+    }
+#endif
 
     if (config->init_delay_ms) {
         k_msleep(config->init_delay_ms);
